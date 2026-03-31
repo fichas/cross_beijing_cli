@@ -1,0 +1,37 @@
+{
+  "name": "cross-bj",
+  "version": "1.0.2",
+  "description": "进京证 CLI 工具 - 让人类和 AI Agent 都能在终端中办理进京证",
+  "type": "module",
+  "bin": {
+    "cross-bj": "bin/cross-bj.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "models/",
+    "skills/"
+  ],
+  "keywords": [
+    "进京证",
+    "北京",
+    "cli",
+    "agent",
+    "beijing",
+    "vehicle-permit"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fichas/cross_beijing_cli.git"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.3.2",
+    "commander": "^14.0.3",
+    "jimp": "^1.6.0",
+    "onnxruntime-node": "^1.24.3"
+  }
+}
