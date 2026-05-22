@@ -14,6 +14,32 @@ export class ApiManager {
   constructor(baseUrl, token) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.token = token;
+    this._sessionReady = false;
+  }
+
+  /**
+   * Activate the JTGL session by exchanging the OAuth token.
+   * Must be called once before other API endpoints accept the token.
+   */
+  async _ensureSession() {
+    if (this._sessionReady) return;
+    const url = `${this.baseUrl}/auth/userController/loginUser?state=101000004071`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: this.token,
+        'Content-Type': 'application/json',
+        Source: SOURCE,
+      },
+      body: JSON.stringify({ token: this.token, state: '101000004071' }),
+    });
+    const result = await resp.json();
+    if (result.code !== 200) {
+      throw new Error(
+        `Session activation failed: code=${result.code}, msg=${result.msg || result.message || JSON.stringify(result)}`,
+      );
+    }
+    this._sessionReady = true;
   }
 
   /**
@@ -27,10 +53,15 @@ export class ApiManager {
    * @throws if response code !== 200
    */
   async callApi(path, data = {}, extraHeaders = {}, method = 'POST') {
+    if (!path.includes('loginUser')) {
+      await this._ensureSession();
+    }
+
     const url = `${this.baseUrl}/${path}`;
     const headers = {
       Authorization: this.token,
       'Content-Type': 'application/json',
+      Source: SOURCE,
       ...extraHeaders,
     };
 
