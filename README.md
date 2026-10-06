@@ -40,8 +40,8 @@ cross-bj init
 # 2. 查看状态
 cross-bj status
 
-# 3. 一键续签
-cross-bj run
+# 3. 配好行程默认值后，按本次实际在京状态续签
+cross-bj run --location inside
 
 # 4. 设置自动续签（每天 9:00）
 cross-bj cron setup
@@ -87,12 +87,16 @@ cross-bj init --phone <phone> --password <pwd>   # 非交互式（已有配置�
 
 ```bash
 cross-bj run                        # 智能续签 + 状态查询 + 通知
+  --location <inside|outside>       #   本次在京/不在京，选择对应行程默认值
   [--plate <plate>]                 #   指定车牌（默认首选车辆）
   [--entry-type <六环内|六环外>]      #   指定进京证类型（默认使用配置值）
+  [--date <YYYY-MM-DD>]             #   指定申请日期，必须在服务端可办日期内
+  [--purpose <code>]                #   本次进京目的代码，不修改保存的默认值
+  [--dry-run]                       #   只校验并预览，不提交、不通知
   [--no-notify]                     #   不发送通知
 ```
 
-无参数执行 `cross-bj` 等同于 `cross-bj run`。
+无参数执行 `cross-bj` 等同于 `cross-bj run`，但需要提交时，缺少本次 `--location` 或行程配置会停止，不再填写固定地址。`inside/outside` 指是否在京，与六环内外证种无关。
 
 ### 状态
 
@@ -143,6 +147,8 @@ cross-bj cron remove                # 移除定时任务
 cross-bj cron status                # 查看定时状态
 ```
 
+旧定时命令未携带本次在京状态，不能直接用于提交；自动续签前须确认固定行程适用，并在实际调用的 `run` 命令中明确传入 `--location`。不要把一次行程状态自动当作长期默认。
+
 ## 智能续签逻辑
 
 `cross-bj run` 自动判断是否需要续签：
@@ -154,7 +160,7 @@ cross-bj cron status                # 查看定时状态
 | 审核通过（生效中），剩余 > 1 天 | 无需续签 |
 | 审核中 / 待生效 | 无需续签 |
 | 已失效 / 审核失败 | 申请今天的进京证 |
-| 剩余次数和天数均为 0 | 无法续签（配额用完） |
+| 六环内剩余次数和天数均为 0 | 无法续签六环内（六环外以服务端检查为准） |
 
 ## 首选车辆逻辑
 
@@ -185,7 +191,34 @@ cross-bj cron status                # 查看定时状态
 
 ## 配置文件
 
-配置存储在 `~/.cross-bj/config.json`，由 `cross-bj init` 自动创建，无需手动编辑。
+配置存储在 `~/.cross-bj/config.json`，登录信息由 `cross-bj init` 创建。
+
+行程默认值放在 `users[0].trip_defaults`，个人地址不要写入仓库源码：
+
+- `outside`：`area`、道路 `code`/`name`、`longitude`/`latitude`。
+- `inside`：在京 `address`、`longitude`/`latitude`。
+- `destination`：目的地 `area`、`district_code`、`address`、`longitude`/`latitude`。
+- `purpose`：用户确认的进京目的 `code`、`name`。
+
+代码与名称须来自官方 `pro/ucDicController/queryDic` 字典（`jjlk`、`QJXZ`、`jjmd`），坐标从官方地图选点核实。用 `getUser()` 读取并合并行程字段后通过 `updateUser({ trip_defaults })` 保存，保留其余设置。缺少必填信息会拒绝提交；没有设备定位时留空，不使用地址坐标伪造当前位置。
+
+## 登录接口与升级
+
+登录流程参考 [Joey-PG/auto-beijing-pass](https://github.com/Joey-PG/auto-beijing-pass/blob/main/src/lib/bjt-login.js)：
+北京通登录后通过 `ssp.jtgl.beijing.gov.cn/sso/callback/userauth` 获取 SSO 中间令牌，
+再调用 `:1443/auth/userController/loginUserByUserCenter` 换取业务 `accessToken`。
+业务请求直接使用该令牌，不再调用旧版 `loginUser` 激活会话。登录和业务请求均有 20 秒超时，保留 HTTPS 证书校验。
+
+旧版保存的令牌不能直接沿用。更新源码后，在仓库目录执行以下命令，使用已保存的账号密码刷新令牌；只有登录成功才更新 `auth`，保留车辆、进京证类型和通知设置：
+
+```bash
+node --input-type=module -e "import { getUser, updateUser } from './src/lib/config-manager.js'; import { login } from './src/lib/bjt-login.js'; const user = getUser(); if (!user?.bjt_phone || !user?.bjt_pwd) throw new Error('Missing saved credentials'); const auth = await login(user.bjt_phone, user.bjt_pwd); updateUser({ auth }); console.log('Token refreshed');"
+node bin/cross-bj.js status
+```
+
+令牌再次失效时也可执行上述刷新命令。`status` 本身不会自动重新登录，避免通过 `init --force` 重置已有配置。
+
+开发验证：`npm test`。测试使用模拟响应，不连接真实账号，也不提交进京证申请。
 
 ## Agent Skills
 
