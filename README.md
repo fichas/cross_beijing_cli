@@ -220,6 +220,37 @@ node bin/cross-bj.js status
 
 开发验证：`npm test`。测试使用模拟响应，不连接真实账号，也不提交进京证申请。
 
+## 自动发布 npm
+
+`.github/workflows/npm-publish.yml` 会在 PR 和 `main` 更新时安装依赖、执行测试并检查打包。
+合入 `main` 后，测试通过且 `package.json` 中的版本尚未发布时，会自动发布到 npm；
+已存在的版本会跳过，查询 registry 失败则终止发布。直接推送到 `main` 也会触发。
+也可以在 GitHub Actions 中选择 `main`，手动运行此 workflow 重试。
+
+首次使用前，在 npm 的 `cross-bj` 包 **Settings → Trusted publishing** 中添加 GitHub Actions：
+
+| 字段 | 值 |
+|------|------|
+| Organization or user | `fichas` |
+| Repository | `cross_beijing_cli` |
+| Workflow filename | `npm-publish.yml` |
+| Environment name | 留空 |
+| Allowed actions | 允许直接执行 `npm publish` |
+
+workflow 使用 GitHub OIDC 认证，不需要设置 `NPM_TOKEN`。使用新建的绑定完成首次发布后，
+才能确认 npm 认证配置有效；新绑定须在 npm 规定的 2 天内完成首次成功发布。
+配置说明见 [npm Trusted publishing 文档](https://docs.npmjs.com/trusted-publishers)。
+
+每次要发布新版本，在开发分支执行以下命令，并把两个版本文件一起提交到 PR：
+
+```bash
+npm version patch --no-git-tag-version
+git add package.json package-lock.json
+```
+
+这会把当前版本例如 `1.0.2` 升为 `1.0.3`；需要更大版本变更时改用 `minor` 或 `major`。
+不升级版本号的合入只执行检查，不会产生新版本。workflow 不会自动改版本号或推送 Git 提交。
+
 ## Agent Skills
 
 | Skill | 说明 |

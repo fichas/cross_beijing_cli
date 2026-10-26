@@ -1,0 +1,87 @@
+name: Test and publish to npm
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm pack --dry-run
+
+  publish:
+    needs: test
+    if: >-
+      github.repository == 'fichas/cross_beijing_cli' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: npm-publish-cross-bj
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Install npm with trusted publishing support
+        run: npm install --global npm@11.9.0
+      - name: Check whether this version is already published
+        id: version
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+
+          const { name, version } = JSON.parse(readFileSync('package.json', 'utf8'));
+          const url = `https://registry.npmjs.org/${encodeURIComponent(name)}/${encodeURIComponent(version)}`;
+          const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+          let publish;
+          if (response.status === 404) {
+            publish = true;
+            console.log(`${name}@${version} will be published.`);
+          } else if (response.ok) {
+            const metadata = await response.json();
+            if (metadata.version !== version) {
+              throw new Error('npm returned metadata for an unexpected version.');
+            }
+            publish = false;
+            console.log(`${name}@${version} is already published; skipping.`);
+          } else {
+            throw new Error(`npm registry check failed with HTTP ${response.status}.`);
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `publish=${publish}\n`);
+          NODE
+      - name: Install dependencies
+        if: steps.version.outputs.publish == 'true'
+        run: npm ci
+      - name: Publish using npm trusted publishing
+        if: steps.version.outputs.publish == 'true'
+        run: npm publish --access public --registry=https://registry.npmjs.org

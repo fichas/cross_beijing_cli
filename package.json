@@ -1,6 +1,6 @@
 {
   "name": "cross-bj",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "进京证 CLI 工具 - 让人类和 AI Agent 都能在终端中办理进京证",
   "type": "module",
   "bin": {
