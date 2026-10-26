@@ -8,6 +8,7 @@ import {
 } from '../lib/models.js';
 import { notify } from '../lib/notifier.js';
 import { output, success, error } from '../output.js';
+import { validateApplyDate } from '../lib/trip-profile.js';
 
 const ACTIVE_STATUSES = ['审核通过(生效中)', '审核中', '审核通过(待生效)'];
 
@@ -38,7 +39,8 @@ function selectVehicle(state, preferredPlate) {
   return vehicles[0];
 }
 
-async function applyPermit(api, user, plate, entryTypeOverride) {
+export async function applyPermit(api, user, plate, entryTypeOverride, { date, location, purpose, dryRun = false } = {}) {
+  if (date !== undefined) validateApplyDate(date);
   const rawState = await api.getStateData();
   const state = parseStateData(rawState);
   const targetPlate = plate || user.preferred_vehicle;
@@ -49,15 +51,17 @@ async function applyPermit(api, user, plate, entryTypeOverride) {
     return { applied: false, message: '未找到绑定车辆', record: null, vehicle: null };
   }
   const record = getLatestRecord(vehicle);
-  const quotaExhausted = String(vehicle.remainingTimes) === '0' && String(vehicle.remainingDays) === '0';
+  const entryType = entryTypeOverride || user.entry_type || '六环内';
+  const quotaExhausted = entryType === '六环内' && String(vehicle.remainingTimes) === '0' && String(vehicle.remainingDays) === '0';
   if (quotaExhausted) {
     return { applied: false, message: `无法续签（剩余次数和天数已用完）- ${vehicle.licenseNumber}`, record, vehicle };
   }
-  const applyDate = needApply(record);
-  if (!applyDate) {
+  const suggestedDate = needApply(record);
+  if (!suggestedDate) {
     const remaining = record ? calcRemainingDays(record) : 0;
     return { applied: false, message: `无需续签 - ${vehicle.licenseNumber} 当前状态: ${record?.statusName}，剩余 ${remaining} 天`, record, vehicle };
   }
+  const applyDate = date ?? suggestedDate;
   const rawVehicles = await api.listVehicles();
   const fullVehicle = rawVehicles.map(parseVehicle).find((v) => v.licenseNumber === vehicle.licenseNumber);
   if (!fullVehicle) {
@@ -65,8 +69,29 @@ async function applyPermit(api, user, plate, entryTypeOverride) {
   }
   const rawUserInfo = await api.getUserInfo();
   const userInfo = parseUserInfo(rawUserInfo);
-  const entryType = entryTypeOverride || user.entry_type || '六环内';
-  const payload = buildApplyPayload(fullVehicle, userInfo, applyDate, entryType);
+  let tripDefaults = user.trip_defaults;
+  if (purpose !== undefined) {
+    const result = await api.callApi('pro/ucDicController/queryDic', { type: 'jjmd' });
+    const selected = Array.isArray(result.data) ? result.data.find((item) => item.zdbm === purpose) : null;
+    if (!selected) throw new Error('进京目的代码不在官方字典中');
+    tripDefaults = { ...tripDefaults, purpose: { code: selected.zdbm, name: selected.zdz } };
+  }
+  const payload = buildApplyPayload(fullVehicle, userInfo, applyDate, entryType, tripDefaults, location);
+  const eligibility = await api.checkHandle(vehicle, entryType);
+  if (!Array.isArray(eligibility?.jjrqs) || !eligibility.jjrqs.includes(applyDate)) {
+    throw new Error(`申请日期 ${applyDate} 不在服务端允许的日期范围内`);
+  }
+  if (dryRun) {
+    return {
+      applied: false, dryRun: true, message: '仅预览，未提交申请', applyDate,
+      preview: {
+        plate: vehicle.licenseNumber, entryType, location,
+        destination: `${payload.area} ${payload.xxdz}`,
+        addressOrRoad: location === 'inside' ? payload.zjxxdz : payload.jjlkmc,
+        purpose: payload.jjmdmc,
+      },
+    };
+  }
   await api.submitApply(payload);
   return { applied: true, message: `已提交续签申请 - ${vehicle.licenseNumber} 申请日期: ${applyDate} 类型: ${entryType}`, record, vehicle, applyDate };
 }
@@ -75,7 +100,8 @@ async function applyPermit(api, user, plate, entryTypeOverride) {
  * Complete flow: apply + status + notify.
  * Matches Python cross_bj.py exec() logic and notification format.
  */
-export async function runCommand({ plate, entryType, noNotify } = {}) {
+export async function runCommand({ plate, entryType, noNotify, date, location, purpose, dryRun } = {}) {
+  noNotify ||= dryRun;
   try {
     if (!isInitialized()) {
       output(error('尚未初始化，请先运行 cross-bj init'));
@@ -88,17 +114,44 @@ export async function runCommand({ plate, entryType, noNotify } = {}) {
     const api = new ApiManager(baseUrl, user.auth);
 
     // Step 1: Apply
-    const applyResult = await applyPermit(api, user, plate, entryType);
+    const applyResult = await applyPermit(api, user, plate, entryType, { date, location, purpose, dryRun });
+    if (applyResult.dryRun) {
+      const p = applyResult.preview;
+      const previewText = [
+        applyResult.message,
+        `车牌: ${p.plate}`,
+        `申请日期: ${applyResult.applyDate}`,
+        `类型: ${p.entryType}`,
+        `是否在京: ${p.location === 'inside' ? '在京' : '不在京'}`,
+        `地址/道路: ${p.addressOrRoad}`,
+        `目的地: ${p.destination}`,
+        `进京目的: ${p.purpose}`,
+      ].join('\n');
+      output(success({ apply: applyResult }, previewText));
+      return;
+    }
     let msg;
     if (!applyResult.applied) {
       msg = '无需续签';
     } else {
-      msg = '续签成功';
+      msg = '已提交申请';
     }
 
-    // Step 2: Use cached state from apply (same as Python — no re-fetch)
-    const record = applyResult.record;
-    const vehicle = applyResult.vehicle;
+    // A successful submission is not proof of approval; query the server again.
+    let record = applyResult.record;
+    let vehicle = applyResult.vehicle;
+    if (applyResult.applied) {
+      try {
+        const latest = parseStateData(await api.getStateData());
+        vehicle = latest.vehicles.find((v) => v.licenseNumber === vehicle.licenseNumber);
+        record = vehicle ? getLatestRecord(vehicle) : null;
+        applyResult.vehicle = vehicle;
+        applyResult.record = record;
+      } catch {
+        output(success({ apply: { applied: true, applyDate: applyResult.applyDate } }, '申请已提交，但状态复查失败；请先查询状态，不要重复提交'));
+        return;
+      }
+    }
 
     if (!record || !vehicle) {
       if (!noNotify) {
@@ -164,12 +217,20 @@ export function registerRunCommand(program) {
     .description('续签进京证（检查→申请→通知）')
     .option('--plate <plate>', '指定车牌号（默认使用首选车辆）')
     .option('--entry-type <type>', '进京证类型: 六环内/六环外（默认使用配置值）')
+    .option('--date <YYYY-MM-DD>', '指定申请日期（以服务端允许日期为准）')
+    .option('--location <inside|outside>', '本次是否在京，选择对应默认配置')
+    .option('--purpose <code>', '本次进京目的代码，按官方字典校验，不覆盖默认值')
+    .option('--dry-run', '仅校验并预览，不提交申请或发送通知')
     .option('--no-notify', '不发送通知')
     .action(async (options) => {
       await runCommand({
         plate: options.plate,
         entryType: options.entryType,
-        noNotify: options.noNotify,
+        noNotify: options.notify === false,
+        date: options.date,
+        location: options.location,
+        purpose: options.purpose,
+        dryRun: options.dryRun,
       });
     });
 }

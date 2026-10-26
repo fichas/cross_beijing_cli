@@ -38,18 +38,30 @@ cross-bj init --phone <phone> --password <password>
 
 注意：已初始化时非交互式 init 会被拦截，需加 `-f` 强制覆盖。
 
+### 旧版升级或令牌失效
+
+当前接口使用 `ssp.jtgl.beijing.gov.cn` 的 SSO 回调和 `:1443` 业务接口。
+`login()` 返回已交换的业务 `accessToken`，不能再通过旧 `loginUser` 激活。
+旧版令牌或 `401` 登录失效错误需要使用已保存账号刷新，按 [README 登录接口与升级](../../README.md#登录接口与升级) 执行。
+刷新成功后再查状态；不要用 `init --force` 覆盖用户已有车辆、类型和通知设置，不要输出账号密码或令牌。
+
 ## 命令参考
 
 ### 续签进京证
 
 ```bash
-cross-bj run                                # 智能续签 + 通知
-cross-bj run --no-notify                    # 只续签不通知
-cross-bj run --plate <plate>                # 指定车牌
-cross-bj run --entry-type 六环外             # 指定类型
+cross-bj run --location inside             # 已在京，使用在京地址
+cross-bj run --location outside --no-notify # 不在京，使用默认进京道路
+cross-bj run --location outside --plate <plate> --entry-type 六环外 --date <YYYY-MM-DD> --dry-run
 ```
 
 自动判断是否需要续签：生效中且剩余≤1天→申请明天的，无记录→申请今天的，审核中/待生效→不申请。
+
+`--date` 精确指定日期，提交前通过服务端 `checkHandle` 验证，不擅自替换日期。`--dry-run` 只输出不含身份信息的预览，确认后去掉该选项才会提交。
+
+`--purpose <代码>` 从官方字典校验本次目的，不改变保存的默认目的；例如“学习培训”为 `04`。用户只确认本次目的时用此参数，不写入长期默认配置。
+
+申请前按 [README 配置文件](../../README.md#配置文件) 设置 `users[0].trip_defaults` 中的不在京道路、在京地址、目的地和进京目的。个人信息仅存本地配置；不使用旧版固定的“北京动物园”或虚构定位。每次明确 `--location inside|outside`，不把上一次在京状态当作永久默认；缺失字段时停止并询问。申请提交后查询 `status`，不能把“已提交”当作审核通过。
 
 ### 查看状态
 
@@ -97,6 +109,8 @@ cross-bj cron setup --schedule '0 8 * * *'  # 自定义时间
 cross-bj cron status
 cross-bj cron remove
 ```
+
+旧定时命令没有本次 `--location`，需要提交时会停止；只有用户确认固定行程适用后才能将对应参数加入定时调用，不能自动猜测是否在京。
 
 ## 安全规则
 

@@ -7,6 +7,7 @@
  */
 
 import { VEHICLE_TYPE_MAP, LICENSE_PLATE_TYPE_MAP } from '../constants.js';
+import { buildTripFields, validateApplyDate } from './trip-profile.js';
 
 // ── Vehicle ────────────────────────────────────────────
 
@@ -165,21 +166,16 @@ export function getLatestRecord(stateVehicle) {
  * @param {object} userInfo - Parsed user info ({ name, idNumber })
  * @param {string} applyDate - Date string YYYY-MM-DD
  * @param {string} entryType - '六环内' or '六环外'
+ * @param {object} tripDefaults - Saved destination, purpose and location profiles
+ * @param {string} location - 'inside' or 'outside' Beijing for this trip
  * @returns {object} API payload
  */
-export function buildApplyPayload(vehicle, userInfo, applyDate, entryType) {
+export function buildApplyPayload(vehicle, userInfo, applyDate, entryType, tripDefaults, location) {
+  validateApplyDate(applyDate);
+  if (!['六环内', '六环外'].includes(entryType)) throw new Error('无效的进京证类型');
+  if (!userInfo?.name?.trim() || !userInfo?.idNumber?.trim()) throw new Error('驾驶人信息不完整');
   return {
-    sfzj: 1,
-    sqdzgdjd: '116.4',
-    sqdzgdwd: '39.9',
-    zjxxdzgdjd: '116.4',
-    zjxxdzgdwd: '39.9',
-    zjxxdz: '北京动物园',
-    xxdz: '北京动物园',
-    jjmdmc: '其它',
-    jjmd: '06',
-    area: '海淀区',
-    jjdq: '006',
+    ...buildTripFields(tripDefaults, location),
     applyIdOld: '',
     jjrq: applyDate,
     jsrxm: userInfo.name,
