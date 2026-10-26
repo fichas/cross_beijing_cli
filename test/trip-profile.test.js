@@ -176,3 +176,27 @@ test('omitting date retains today selection but still requires a trip profile', 
   assert.equal((await applyPermit(api, user, undefined, OUTER, { location: 'inside' })).applyDate, today);
   assert.equal(api.submissions[0].sfzj, '1');
 });
+
+test('legacy run calls default to outside and retain the configured road', async () => {
+  const api = mockApi();
+  const result = await applyPermit(api, user, undefined, OUTER, { date: options.date });
+  assert.equal(result.applied, true);
+  assert.equal(api.submissions.length, 1);
+  assert.equal(api.submissions[0].sfzj, '0');
+  assert.equal(api.submissions[0].jjlk, defaults.outside.code);
+  assert.equal(api.submissions[0].zjxxdz, '');
+});
+
+test('default outside dry-run previews the actual selected profile without submitting', async () => {
+  const api = mockApi();
+  const result = await applyPermit(api, user, undefined, OUTER, { date: options.date, dryRun: true });
+  assert.equal(result.preview.location, 'outside');
+  assert.equal(result.preview.addressOrRoad, defaults.outside.name);
+  assert.equal(api.submissions.length, 0);
+});
+
+test('default outside still rejects missing road information', async () => {
+  const api = mockApi();
+  await assert.rejects(applyPermit(api, { trip_defaults: { ...defaults, outside: undefined } }, undefined, OUTER, { date: options.date }), /outside/);
+  assert.equal(api.submissions.length, 0);
+});
