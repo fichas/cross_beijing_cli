@@ -1,3 +1,4 @@
+import { Option } from 'commander';
 import { execSync } from 'node:child_process';
 import { output, success, error } from '../output.js';
 
@@ -27,6 +28,7 @@ export function registerCronCommand(program) {
     .command('setup')
     .description('设置自动续签定时任务（默认每天 9:00）')
     .option('--schedule <cron>', 'cron 表达式（如 "0 8 * * *"）', SCHEDULE)
+    .addOption(new Option('--location <inside|outside>', '是否在京，默认不在京').choices(['inside', 'outside']).default('outside'))
     .action(async (options) => {
       try {
         let current = getCurrentCrontab();
@@ -38,7 +40,7 @@ export function registerCronCommand(program) {
 
         const binPath = getBinPath();
         const schedule = options.schedule;
-        const cronLine = `${schedule} ${binPath} run --json >> /tmp/cross-bj.log 2>&1 ${MARKER}`;
+        const cronLine = `${schedule} ${binPath} run --location ${options.location} >> /tmp/cross-bj.log 2>&1 ${MARKER}`;
         const newCrontab = current.trimEnd() + (current.trim() ? '\n' : '') + cronLine + '\n';
         const escapedCrontab = newCrontab.replace(/'/g, "'\\''");
 

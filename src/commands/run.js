@@ -39,7 +39,7 @@ function selectVehicle(state, preferredPlate) {
   return vehicles[0];
 }
 
-export async function applyPermit(api, user, plate, entryTypeOverride, { date, location, purpose, dryRun = false } = {}) {
+export async function applyPermit(api, user, plate, entryTypeOverride, { date, location = 'outside', purpose, dryRun = false } = {}) {
   if (date !== undefined) validateApplyDate(date);
   const rawState = await api.getStateData();
   const state = parseStateData(rawState);
@@ -100,7 +100,7 @@ export async function applyPermit(api, user, plate, entryTypeOverride, { date, l
  * Complete flow: apply + status + notify.
  * Matches Python cross_bj.py exec() logic and notification format.
  */
-export async function runCommand({ plate, entryType, noNotify, date, location, purpose, dryRun } = {}) {
+export async function runCommand({ plate, entryType, noNotify, date, location = 'outside', purpose, dryRun } = {}) {
   noNotify ||= dryRun;
   try {
     if (!isInitialized()) {
@@ -218,7 +218,7 @@ export function registerRunCommand(program) {
     .option('--plate <plate>', '指定车牌号（默认使用首选车辆）')
     .option('--entry-type <type>', '进京证类型: 六环内/六环外（默认使用配置值）')
     .option('--date <YYYY-MM-DD>', '指定申请日期（以服务端允许日期为准）')
-    .option('--location <inside|outside>', '本次是否在京，选择对应默认配置')
+    .option('--location <inside|outside>', '本次是否在京，默认 outside（不在京）')
     .option('--purpose <code>', '本次进京目的代码，按官方字典校验，不覆盖默认值')
     .option('--dry-run', '仅校验并预览，不提交申请或发送通知')
     .option('--no-notify', '不发送通知')

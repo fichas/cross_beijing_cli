@@ -61,7 +61,7 @@ cross-bj run --location outside --plate <plate> --entry-type 六环外 --date <Y
 
 `--purpose <代码>` 从官方字典校验本次目的，不改变保存的默认目的；例如“学习培训”为 `04`。用户只确认本次目的时用此参数，不写入长期默认配置。
 
-申请前按 [README 配置文件](../../README.md#配置文件) 设置 `users[0].trip_defaults` 中的不在京道路、在京地址、目的地和进京目的。个人信息仅存本地配置；不使用旧版固定的“北京动物园”或虚构定位。每次明确 `--location inside|outside`，不把上一次在京状态当作永久默认；缺失字段时停止并询问。申请提交后查询 `status`，不能把“已提交”当作审核通过。
+申请前按 [README 配置文件](../../README.md#配置文件) 设置 `users[0].trip_defaults` 中的不在京道路、在京地址、目的地和进京目的。个人信息仅存本地配置；不使用旧版固定的“北京动物园”或虚构定位。未指定 `--location` 时默认 `outside`（不在京），需要在京地址时显式传入 `--location inside`；行程字段缺失时停止并询问。申请提交后查询 `status`，不能把“已提交”当作审核通过。
 
 ### 查看状态
 
@@ -110,7 +110,7 @@ cross-bj cron status
 cross-bj cron remove
 ```
 
-旧定时命令没有本次 `--location`，需要提交时会停止；只有用户确认固定行程适用后才能将对应参数加入定时调用，不能自动猜测是否在京。
+`cron setup` 默认生成 `run --location outside`，可用 `cron setup --location inside` 改为在京。旧任务若包含不受支持的 `--json`，需重新运行 `cron setup` 替换；完整行程配置仍为必填。
 
 ## 安全规则
 

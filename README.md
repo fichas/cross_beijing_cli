@@ -40,8 +40,8 @@ cross-bj init
 # 2. 查看状态
 cross-bj status
 
-# 3. 配好行程默认值后，按本次实际在京状态续签
-cross-bj run --location inside
+# 3. 配好行程默认值后续签（默认不在京；在京可加 --location inside）
+cross-bj run
 
 # 4. 设置自动续签（每天 9:00）
 cross-bj cron setup
@@ -87,7 +87,7 @@ cross-bj init --phone <phone> --password <pwd>   # 非交互式（已有配置�
 
 ```bash
 cross-bj run                        # 智能续签 + 状态查询 + 通知
-  --location <inside|outside>       #   本次在京/不在京，选择对应行程默认值
+  [--location <inside|outside>]     #   默认 outside（不在京），可显式选择 inside
   [--plate <plate>]                 #   指定车牌（默认首选车辆）
   [--entry-type <六环内|六环外>]      #   指定进京证类型（默认使用配置值）
   [--date <YYYY-MM-DD>]             #   指定申请日期，必须在服务端可办日期内
@@ -96,7 +96,7 @@ cross-bj run                        # 智能续签 + 状态查询 + 通知
   [--no-notify]                     #   不发送通知
 ```
 
-无参数执行 `cross-bj` 等同于 `cross-bj run`，但需要提交时，缺少本次 `--location` 或行程配置会停止，不再填写固定地址。`inside/outside` 指是否在京，与六环内外证种无关。
+无参数执行 `cross-bj` 等同于 `cross-bj run`，默认按 `outside`（不在京）处理；缺少行程配置时会停止，不再填写固定地址。`inside/outside` 指是否在京，与六环内外证种无关。
 
 ### 状态
 
@@ -141,13 +141,14 @@ cross-bj set entry-type <六环内|六环外>   # 修改进京证类型
 ### 定时任务
 
 ```bash
-cross-bj cron setup                 # 写入 crontab（默认每天 9:00）
+cross-bj cron setup                 # 写入 crontab（默认每天 9:00、不在京）
+  [--location <inside|outside>]     #   使用在京或不在京行程配置
   [--schedule '<cron>']             #   自定义 cron 表达式
 cross-bj cron remove                # 移除定时任务
 cross-bj cron status                # 查看定时状态
 ```
 
-旧定时命令未携带本次在京状态，不能直接用于提交；自动续签前须确认固定行程适用，并在实际调用的 `run` 命令中明确传入 `--location`。不要把一次行程状态自动当作长期默认。
+`cron setup` 默认写入 `run --location outside`（不在京）。需要使用在京地址时，执行 `cross-bj cron setup --location inside`。旧定时任务中的 `--json` 不受支持，请重新执行 `cron setup` 替换旧命令；行程配置仍须完整。
 
 ## 智能续签逻辑
 
